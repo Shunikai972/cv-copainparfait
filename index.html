@@ -9,54 +9,310 @@
     <link rel="stylesheet" href="./src/styles.css" />
     <title>Noam — Candidature spontanée</title>
     <style>
-      #page-loader{min-height:100vh;display:grid;place-items:center;background:#0c0d10;color:#f5f1e8;font-family:Inter,system-ui,sans-serif;padding:24px;text-align:center}#page-loader div{max-width:620px}#page-loader b{display:block;font-size:clamp(42px,9vw,90px);letter-spacing:-.06em;margin-bottom:12px}#page-loader p{opacity:.72;line-height:1.6}#page-error{display:none;color:#ff9e91;margin-top:18px;font-size:14px}
+      #boot{min-height:100vh;display:grid;place-items:center;background:#0c0d10;color:#f5f1e8;font-family:Inter,system-ui,sans-serif;padding:24px;text-align:center}
+      #boot>div{max-width:620px}#boot b{display:block;font-size:clamp(42px,9vw,90px);letter-spacing:-.06em;margin-bottom:12px}#boot p{opacity:.72;line-height:1.6}#boot-error{display:none;color:#ff9e91;margin-top:18px;font-size:13px;white-space:pre-wrap}
     </style>
   </head>
   <body>
     <div id="app">
-      <div id="page-loader"><div><b>NOAM.CV</b><p>Compilation de la candidature en cours…<br>Oui, faire un site entier était objectivement disproportionné.</p><p id="page-error"></p></div></div>
+      <div id="boot"><div><b>NOAM.CV</b><p>Chargement du dossier candidat…<br>Le niveau de professionnalisme reste en cours d’évaluation.</p><p id="boot-error"></p></div></div>
     </div>
 
-    <!-- Fallback GitHub Pages : permet aussi au site de fonctionner si Pages est réglé sur main/(root). -->
-    <script src="https://unpkg.com/vue@3.5.18/dist/vue.runtime.global.prod.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/vue3-sfc-loader@0.9.5/dist/vue3-sfc-loader.js"></script>
-    <script>
-      ;(async () => {
-        try {
-          const { loadModule } = window['vue3-sfc-loader']
-          if (!window.Vue || !loadModule) throw new Error('Dépendances Vue indisponibles')
+    <!-- Vue avec compilateur de templates. On ne fait plus exécuter App.vue par un SFC loader. -->
+    <script src="https://cdn.jsdelivr.net/npm/vue@3.5.18/dist/vue.global.prod.js"></script>
+    <script type="module">
+      const fail = (error) => {
+        console.error('NOAM.CV boot error:', error)
+        const node = document.getElementById('boot-error')
+        if (node) {
+          node.style.display = 'block'
+          node.textContent = 'Erreur de chargement : ' + (error?.message || error)
+        }
+      }
 
-          const options = {
-            moduleCache: { vue: window.Vue },
-            async getFile(url) {
-              const response = await fetch(url)
-              if (!response.ok) throw new Error(`${response.status} ${response.statusText} — ${url}`)
-              return {
-                getContentData: asBinary => asBinary ? response.arrayBuffer() : response.text(),
+      try {
+        if (!window.Vue) throw new Error('Vue n’a pas pu être chargé depuis le CDN.')
+
+        const [sfcResponse, heroModule, bwModule, peaceModule, altModule, catOneModule, catTwoModule, pdfModule] = await Promise.all([
+          fetch('./src/App.vue?pages=2', { cache: 'no-store' }),
+          import('./src/assets-inline/noam-hero.js'),
+          import('./src/assets-inline/noam-bw.js'),
+          import('./src/assets-inline/noam-peace.js'),
+          import('./src/assets-inline/noam-alt.js'),
+          import('./src/assets-inline/chat-1.js'),
+          import('./src/assets-inline/chat-2.js'),
+          import('./src/pdfData.js')
+        ])
+
+        if (!sfcResponse.ok) throw new Error(`App.vue introuvable (${sfcResponse.status}).`)
+        const sfc = await sfcResponse.text()
+        const templateMatch = sfc.match(/<template>([\s\S]*?)<\/template>/)
+        if (!templateMatch) throw new Error('Template Vue introuvable dans App.vue.')
+        const template = templateMatch[1]
+
+        const heroPhoto = heroModule.default
+        const bwPhoto = bwModule.default
+        const peacePhoto = peaceModule.default
+        const altPhoto = altModule.default
+        const catOne = catOneModule.default
+        const catTwo = catTwoModule.default
+        const pdfBase64 = pdfModule.default
+
+        const { computed, onBeforeUnmount, onMounted, ref, createApp } = window.Vue
+
+        const App = {
+          template,
+          setup() {
+            const theme = ref('dark')
+            const introVisible = ref(true)
+            const introStep = ref(0)
+            const introProgress = ref(0)
+            const shortlist = ref(false)
+            const toast = ref('')
+            const modalOpen = ref(false)
+            const mobileOpen = ref(false)
+            const openFaq = ref(0)
+            const catVisible = ref(false)
+            const catAlt = ref(false)
+            const catClicks = ref(0)
+            const konamiIndex = ref(0)
+            const applicationName = ref('')
+            const applicationIdea = ref('')
+
+            let introTimer
+            let catTimer
+            let toastTimer
+            let progressTimer
+
+            const introLines = [
+              'Initialisation du dossier candidat…',
+              'Vérification des compétences relationnelles…',
+              'Analyse du risque félin…',
+              'Compilation de la candidature…',
+              'Résultat : étonnamment présentable.'
+            ]
+
+            const skills = [
+              ['Humour', 'Capacité à raconter des conneries avec un sérieux inquiétant.', 'niveau: stable'],
+              ['Romantisme', 'Fonctionnalité disponible nativement, sans abonnement Premium.', 'feature_flag: on'],
+              ['Intelligence', 'Assez pour savoir que mettre « intelligent » dans son propre CV est statistiquement suspect.', 'self_reported'],
+              ['Code', 'Python, informatique et quatre heures pour automatiser une tâche qui en prenait cinq minutes.', 'production-ish'],
+              ['Communication', 'Débats, longues discussions nocturnes et envoi occasionnel de vidéos de chats.', 'latency: low'],
+              ['Cuisine', 'Niveau actuellement soumis à audit indépendant.', 'status: pending']
+            ]
+
+            const interests = [
+              ['🐈', 'Chats', 'Probablement mon principal conflit d’intérêts.'],
+              ['📚', 'Lecture', 'Parce que fixer du texte pendant plusieurs heures est apparemment un loisir.'],
+              ['🎮', 'Jeux vidéo', 'Le deuxième écran est une extension naturelle du corps humain.'],
+              ['💻', 'Code', 'Passion, études et principale cause de « attends deux minutes, j’ai presque fini ».'],
+              ['🧠', 'Discussions', 'Politique, sciences, technologie, société ou sujets absurdes à 2 h du matin.'],
+              ['✍️', 'Poésie', 'J’écris des poèmes. Et si on apprend vraiment à se connaître, j’aimerais bien en écrire un pour toi.']
+            ]
+
+            const issues = [
+              ['BUG-001', 'Peut dire « j’arrive » alors qu’il est encore devant son PC.', 'minor'],
+              ['BUG-002', 'S’arrête parfois pour regarder un chat dans la rue.', 'won’t fix'],
+              ['BUG-003', 'Peut transformer une question simple en débat beaucoup trop approfondi.', 'known'],
+              ['BUG-004', '« Je fais juste une petite modification au code » n’a aucune valeur temporelle fiable.', 'recurring'],
+              ['BUG-005', 'Risque élevé de vouloir adopter un chat.', 'feature?']
+            ]
+
+            const features = [
+              'Loyal', 'Curieux', 'Affectueux', 'Romantique sans vouloir jouer dans une comédie Netflix',
+              'Aime écouter', 'Capable de parler sérieusement', 'Aime apprendre les passions des autres',
+              'Investi dans ce qu’il aime', 'Toujours partant pour rire'
+            ]
+
+            const values = [
+              ['Communication', 'Pouvoir dire les choses clairement, même quand elles sont moins simples.'],
+              ['Confiance', 'Pas de jeu de rôle permanent : chacun peut rester lui-même.'],
+              ['Humour', 'Être sérieux quand il faut, sans devoir l’être tout le temps.'],
+              ['Curiosité', 'Apprendre de l’autre, découvrir ses passions et continuer à se surprendre.'],
+              ['Indépendance', 'Être bien ensemble sans arrêter d’exister séparément.'],
+              ['Affection', 'Les petits détails comptent souvent plus que les grandes déclarations.']
+            ]
+
+            const stats = [
+              ['Amour des chats', 100, '100 %'],
+              ['Probabilité de parler informatique', 88, 'élevée'],
+              ['Chance d’envoyer un meme', 97, '97 %'],
+              ['Orientation politique', 100, 'hors cadre à gauche'],
+              ['Discussions inutiles à 2 h du matin', 94, 'excellente'],
+              ['Finir « juste un dernier truc » avant de dormir', 3, '3 %']
+            ]
+
+            const testimonials = [
+              ['« Il paraît qu’il est drôle. »', 'Source étonnamment proche du candidat'],
+              ['« Miaou. »', 'Expert indépendant'],
+              ['« Son code fonctionne. »', 'Certains jours']
+            ]
+
+            const faqs = [
+              ['Pourquoi un site entier ?', 'Parce qu’envoyer « salut ça va » ne permettait manifestement pas d’utiliser mes compétences en informatique.'],
+              ['C’est une vraie candidature ?', 'Juridiquement, probablement pas. Moralement, à toi de voir.'],
+              ['Combien de chats sont acceptables ?', 'Cette question semble orientée.'],
+              ['Premier rendez-vous idéal ?', 'Quelque chose où on peut réellement discuter et rire : café, balade, bar tranquille, activité improvisée… bonus non contractuel si un chat apparaît.'],
+              ['Quel est le processus de recrutement ?', 'Discussion → feeling → café/verre/sortie → conseil d’administration extraordinaire.']
+            ]
+
+            const responsibilities = [
+              'envoyer des trucs qui m’ont fait penser à toi',
+              'retenir les petits détails importants',
+              'proposer des sorties',
+              'écouter vraiment quand quelque chose ne va pas',
+              'accepter qu’un chat trouvé dans la rue puisse potentiellement devenir notre chat',
+              'fournir une quantité raisonnable de sarcasme',
+              'débattre pendant deux heures puis aller manger comme si rien ne s’était passé'
+            ]
+
+            const themeLabel = computed(() => theme.value === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre')
+
+            function showToast(message) {
+              toast.value = message
+              clearTimeout(toastTimer)
+              toastTimer = setTimeout(() => (toast.value = ''), 3800)
+            }
+
+            function toggleTheme() {
+              theme.value = theme.value === 'dark' ? 'light' : 'dark'
+              document.documentElement.dataset.theme = theme.value
+              localStorage.setItem('noam-theme', theme.value)
+            }
+
+            function finishIntro() {
+              clearInterval(progressTimer)
+              clearTimeout(introTimer)
+              introProgress.value = 100
+              introStep.value = introLines.length - 1
+              setTimeout(() => {
+                introVisible.value = false
+                sessionStorage.setItem('noam-intro-seen', '1')
+              }, 300)
+            }
+
+            function toggleShortlist() {
+              shortlist.value = !shortlist.value
+              localStorage.setItem('noam-shortlist', shortlist.value ? '1' : '0')
+              showToast(shortlist.value
+                ? 'Candidature enregistrée. Le candidat essaie de rester professionnel.'
+                : 'Retiré de la shortlist. Décision transmise au conseil d’administration.')
+            }
+
+            function scrollTo(id) {
+              mobileOpen.value = false
+              document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            }
+
+            function downloadCv() {
+              const bytes = Uint8Array.from(atob(pdfBase64), c => c.charCodeAt(0))
+              const blob = new Blob([bytes], { type: 'application/pdf' })
+              const url = URL.createObjectURL(blob)
+              const a = document.createElement('a')
+              a.href = url
+              a.download = 'Noam-CV-candidature-amoureuse.pdf'
+              a.click()
+              setTimeout(() => URL.revokeObjectURL(url), 1000)
+              showToast('CV téléchargé. Oui, le PDF existe vraiment.')
+            }
+
+            function scheduleCat() {
+              clearTimeout(catTimer)
+              catTimer = setTimeout(() => {
+                catAlt.value = !catAlt.value
+                catVisible.value = true
+              }, 9000 + Math.random() * 9000)
+            }
+
+            function hideCat() {
+              catVisible.value = false
+              scheduleCat()
+            }
+
+            function clickCat() {
+              catClicks.value++
+              if (catClicks.value === 3) showToast('Le contrôleur qualité félin confirme que tu as de bons réflexes.')
+              if (catClicks.value === 5) showToast('Le chat demande officiellement à participer à l’entretien.')
+              if (catClicks.value >= 7) {
+                showToast('Achievement unlocked : recrutement supervisé par un chat.')
+                catClicks.value = 0
               }
-            },
-            addStyle(textContent) {
-              const style = document.createElement('style')
-              style.textContent = textContent
-              document.head.appendChild(style)
-            },
-            log(type, ...args) {
-              ;(console[type] || console.log)(...args)
-            },
-          }
+            }
 
-          const appPath = new URL('./src/App.vue', window.location.href).pathname
-          const App = await loadModule(appPath, options)
-          window.Vue.createApp(App).mount('#app')
-        } catch (error) {
-          console.error('NOAM.CV boot error:', error)
-          const errorNode = document.getElementById('page-error')
-          if (errorNode) {
-            errorNode.style.display = 'block'
-            errorNode.textContent = 'Le site a refusé de compiler. Recharge la page dans quelques secondes. Détail technique : ' + error.message
+            function onKeydown(event) {
+              const code = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a']
+              if (event.key === code[konamiIndex.value]) {
+                konamiIndex.value++
+                if (konamiIndex.value === code.length) {
+                  konamiIndex.value = 0
+                  document.body.classList.add('redistribution-mode')
+                  showToast('Mode redistribution activé : les compliments appartiennent désormais à tout le monde.')
+                  setTimeout(() => document.body.classList.remove('redistribution-mode'), 3500)
+                }
+              } else {
+                konamiIndex.value = event.key === code[0] ? 1 : 0
+              }
+            }
+
+            async function copyApplication() {
+              const name = applicationName.value.trim() || 'Candidate anonyme'
+              const idea = applicationIdea.value.trim() || 'un café / une balade / quelque chose où on peut discuter'
+              const text = `${name} souhaite proposer un entretien informel à Noam. Proposition : ${idea}. Décision RH : à discuter.`
+              try {
+                await navigator.clipboard.writeText(text)
+                showToast('Message copié. Il ne reste plus qu’à l’envoyer là où tu as reçu ce lien.')
+              } catch {
+                showToast('Copie automatique indisponible. Le formulaire reste juridiquement très peu contraignant.')
+              }
+              modalOpen.value = false
+            }
+
+            onMounted(() => {
+              theme.value = localStorage.getItem('noam-theme') || 'dark'
+              document.documentElement.dataset.theme = theme.value
+              shortlist.value = localStorage.getItem('noam-shortlist') === '1'
+
+              const alreadySeen = sessionStorage.getItem('noam-intro-seen') === '1'
+              if (alreadySeen) {
+                introVisible.value = false
+              } else {
+                progressTimer = setInterval(() => {
+                  introProgress.value = Math.min(100, introProgress.value + 2)
+                  introStep.value = Math.min(introLines.length - 1, Math.floor(introProgress.value / 21))
+                }, 62)
+                introTimer = setTimeout(finishIntro, 3400)
+              }
+
+              scheduleCat()
+              window.addEventListener('keydown', onKeydown)
+              console.log('%cNOAM.CV', 'font-size:22px;font-weight:800;letter-spacing:4px')
+              console.log('Tu as ouvert la console. Curiosité : +1 point.')
+              console.log('status: emotionally_online | uptime: variable selon quantité de sommeil | cat_dependency: unresolved')
+            })
+
+            onBeforeUnmount(() => {
+              clearTimeout(introTimer)
+              clearTimeout(catTimer)
+              clearTimeout(toastTimer)
+              clearInterval(progressTimer)
+              window.removeEventListener('keydown', onKeydown)
+            })
+
+            return {
+              theme, introVisible, introStep, introProgress, shortlist, toast, modalOpen, mobileOpen,
+              openFaq, catVisible, catAlt, catClicks, konamiIndex, applicationName, applicationIdea,
+              introLines, skills, interests, issues, features, values, stats, testimonials, faqs, responsibilities,
+              themeLabel, heroPhoto, bwPhoto, peacePhoto, altPhoto, catOne, catTwo,
+              showToast, toggleTheme, finishIntro, toggleShortlist, scrollTo, downloadCv,
+              scheduleCat, hideCat, clickCat, onKeydown, copyApplication
+            }
           }
         }
-      })()
+
+        createApp(App).mount('#app')
+      } catch (error) {
+        fail(error)
+      }
     </script>
   </body>
 </html>
