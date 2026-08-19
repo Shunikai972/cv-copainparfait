@@ -1,14 +1,61 @@
 <!doctype html>
-<html lang="fr">
+<html lang="fr" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0c0d10" />
     <meta name="description" content="CV de candidature amoureuse de Noam — probablement le seul CV où les chats ont un droit de veto." />
+    <link rel="icon" type="image/svg+xml" href="./public/favicon.svg" />
+    <link rel="stylesheet" href="./src/styles.css" />
     <title>Noam — Candidature spontanée</title>
+    <style>
+      #page-loader{min-height:100vh;display:grid;place-items:center;background:#0c0d10;color:#f5f1e8;font-family:Inter,system-ui,sans-serif;padding:24px;text-align:center}#page-loader div{max-width:620px}#page-loader b{display:block;font-size:clamp(42px,9vw,90px);letter-spacing:-.06em;margin-bottom:12px}#page-loader p{opacity:.72;line-height:1.6}#page-error{display:none;color:#ff9e91;margin-top:18px;font-size:14px}
+    </style>
   </head>
   <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.js"></script>
+    <div id="app">
+      <div id="page-loader"><div><b>NOAM.CV</b><p>Compilation de la candidature en cours…<br>Oui, faire un site entier était objectivement disproportionné.</p><p id="page-error"></p></div></div>
+    </div>
+
+    <!-- Fallback GitHub Pages : permet aussi au site de fonctionner si Pages est réglé sur main/(root). -->
+    <script src="https://unpkg.com/vue@3.5.18/dist/vue.runtime.global.prod.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vue3-sfc-loader@0.9.5/dist/vue3-sfc-loader.js"></script>
+    <script>
+      ;(async () => {
+        try {
+          const { loadModule } = window['vue3-sfc-loader']
+          if (!window.Vue || !loadModule) throw new Error('Dépendances Vue indisponibles')
+
+          const options = {
+            moduleCache: { vue: window.Vue },
+            async getFile(url) {
+              const response = await fetch(url)
+              if (!response.ok) throw new Error(`${response.status} ${response.statusText} — ${url}`)
+              return {
+                getContentData: asBinary => asBinary ? response.arrayBuffer() : response.text(),
+              }
+            },
+            addStyle(textContent) {
+              const style = document.createElement('style')
+              style.textContent = textContent
+              document.head.appendChild(style)
+            },
+            log(type, ...args) {
+              ;(console[type] || console.log)(...args)
+            },
+          }
+
+          const App = await loadModule('./src/App.vue', options)
+          window.Vue.createApp(App).mount('#app')
+        } catch (error) {
+          console.error('NOAM.CV boot error:', error)
+          const errorNode = document.getElementById('page-error')
+          if (errorNode) {
+            errorNode.style.display = 'block'
+            errorNode.textContent = 'Le site a refusé de compiler. Recharge la page dans quelques secondes. Détail technique : ' + error.message
+          }
+        }
+      })()
+    </script>
   </body>
 </html>
