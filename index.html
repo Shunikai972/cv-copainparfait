@@ -45,7 +45,8 @@
             },
           }
 
-          const App = await loadModule('./src/App.vue', options)
+          const appPath = new URL('./src/App.vue', window.location.href).pathname
+          const App = await loadModule(appPath, options)
           window.Vue.createApp(App).mount('#app')
         } catch (error) {
           console.error('NOAM.CV boot error:', error)
